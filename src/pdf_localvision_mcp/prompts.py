@@ -36,7 +36,7 @@ You analyze rendered PDF page images directly without OCR pre-parsing.
 
 CRITICAL RULES:
 1. Target page images are preceded by explicit `=== PAGE N ===` markers. Attribute all content strictly to its true page number `N`.
-2. If a preceding page image is provided marked with `=== READ-ONLY VISUAL CONTEXT: PAGE N ===`, treat it strictly as context to resolve continuing sentences, table headers, and diagrams across page boundaries. Do NOT transcribe the context page; transcribe only the target pages.
+2. If a preceding page image is provided marked with `=== READ-ONLY VISUAL CONTEXT: PAGE N ===`, treat it strictly as context to resolve continuing sentences, table headers, and diagrams across page boundaries. Do NOT generate a breakdown for the context page; extract only the target pages.
 3. For each target page, generate a `## [Page N]` section containing:
    * Natural reading-order prose in Markdown (headers, lists, footnotes).
    * Tables as complete HTML `<table>` blocks preserving `<thead>`, `<tbody>`, `rowspan`, `colspan`, and exact cell values.
@@ -99,7 +99,7 @@ def build_window_stage1_messages(
                 "text": (
                     f"=== READ-ONLY VISUAL CONTEXT: PAGE {context_page.page_number} ===\n"
                     f"Use this page only as read-only visual context to resolve split sentences and continuing table headers. "
-                    f"Do NOT transcribe Page {context_page.page_number}."
+                    f"Do NOT generate a breakdown for Page {context_page.page_number}."
                 ),
             }
         )
@@ -109,13 +109,12 @@ def build_window_stage1_messages(
         content.append({"type": "text", "text": f"=== PAGE {page.page_number} ==="})
         content.append({"type": "image_url", "image_url": {"url": page.data_uri}})
 
-    first_page = pages[0].page_number
-    last_page = pages[-1].page_number
+    target_page_ranges = format_page_ranges([p.page_number for p in pages])
     content.append(
         {
             "type": "text",
             "text": (
-                f"Transcribe ONLY target pages {first_page} through {last_page} into explicit `## [Page N]` sections.\n"
+                f"Extract ONLY target pages ({target_page_ranges}) into explicit `## [Page N]` sections.\n"
                 f"Do not produce any executive synthesis."
             ),
         }

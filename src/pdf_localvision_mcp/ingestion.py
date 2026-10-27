@@ -35,26 +35,26 @@ def parse_page_selection(expression: str) -> list[int]:
     pages: set[int] = set()
     parts = expression.split(",")
     for part in parts:
-        chunk = part.strip()
-        if not chunk:
+        segment = part.strip()
+        if not segment:
             raise ValueError(f"Invalid page selection: empty segment in '{expression}'.")
-        if "-" in chunk:
-            range_parts = chunk.split("-")
+        if "-" in segment:
+            range_parts = segment.split("-")
             if len(range_parts) != 2:
-                raise ValueError(f"Invalid page selection range: '{chunk}'.")
+                raise ValueError(f"Invalid page selection range: '{segment}'.")
             start_str, end_str = range_parts[0].strip(), range_parts[1].strip()
             if not start_str.isdigit() or not end_str.isdigit():
-                raise ValueError(f"Invalid page selection range: '{chunk}'.")
+                raise ValueError(f"Invalid page selection range: '{segment}'.")
             start, end = int(start_str), int(end_str)
             if start <= 0 or end <= 0:
-                raise ValueError(f"Invalid page selection: page numbers must be >= 1, got '{chunk}'.")
+                raise ValueError(f"Invalid page selection: page numbers must be >= 1, got '{segment}'.")
             if start > end:
                 raise ValueError(f"Invalid page selection: start page ({start}) cannot exceed end page ({end}).")
             pages.update(range(start, end + 1))
         else:
-            if not chunk.isdigit():
-                raise ValueError(f"Invalid page selection: expected positive integer, got '{chunk}'.")
-            val = int(chunk)
+            if not segment.isdigit():
+                raise ValueError(f"Invalid page selection: expected positive integer, got '{segment}'.")
+            val = int(segment)
             if val <= 0:
                 raise ValueError(f"Invalid page selection: page numbers must be >= 1, got '{val}'.")
             pages.add(val)
@@ -169,9 +169,9 @@ def rasterize_pdf_file(
     path: Path,
     dpi: int = 150,
     max_image_side: int | None = None,
-    pages: str | list[int] | None = None,
+    pages: str | None = None,
 ) -> RasterizedDocument:
-    if isinstance(pages, str):
+    if pages is not None:
         parse_page_selection(pages)
 
     validate_single_pdf_target(path)
@@ -189,10 +189,7 @@ def rasterize_pdf_file(
         if getattr(doc, "is_encrypted", False) and getattr(doc, "needs_pass", 0) != 0:
             raise EncryptedPdfError(f"Target file is encrypted / password-protected: '{path.name}'")
         total_pages = len(doc)
-        if isinstance(pages, list):
-            target_pages = [p for p in sorted(set(pages)) if 1 <= p <= total_pages]
-        else:
-            target_pages = resolve_pages(pages, total_pages)
+        target_pages = resolve_pages(pages, total_pages)
 
         if not target_pages:
             return RasterizedDocument(

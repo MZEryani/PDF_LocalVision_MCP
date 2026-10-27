@@ -137,7 +137,11 @@ async def _read_single_pdf_document(
     tasks = []
     for idx in range(0, len(doc.pages), PAGE_WINDOW_SIZE):
         window_pages = doc.pages[idx : idx + PAGE_WINDOW_SIZE]
-        context_page = doc.pages[idx - 1] if idx > 0 else None
+        context_page = (
+            doc.pages[idx - 1]
+            if idx > 0 and doc.pages[idx - 1].page_number == window_pages[0].page_number - 1
+            else None
+        )
         tasks.append(_process_window_stage1(adapter, window_pages, context_page, semaphore))
 
     window_readings = await asyncio.gather(*tasks)
