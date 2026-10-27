@@ -23,27 +23,29 @@ CRITICAL RULES:
 1. Every page image is preceded by an explicit `=== PAGE N ===` marker. Attribute all content strictly to its true page number `N`.
 2. Generate output in TWO explicitly delimited sections IN THIS EXACT ORDER:
    - First: `<!-- GROUNDED_PAGES -->` containing a `## [Page N]` section for every page in ascending order:
-     * Natural reading-order prose in Markdown (headers, lists, footnotes).
+     * Natural reading-order prose in Markdown (headers, lists, footnotes, speaker/author tags).
      * Tables as complete HTML `<table>` blocks preserving `<thead>`, `<tbody>`, `rowspan`, `colspan`, and exact cell values.
      * Mathematical equations in LaTeX (`\\(...\\)` inline or `\\[...\\]` display).
-     * Figures, charts, and diagrams as structured Visual Data Blocks (chart type, axes/labels, linearized HTML data table of plotted values, or `mermaid` flowcharts for process/architecture diagrams).
+     * Figures, charts, timelines, and diagrams as structured Visual Data Blocks (chart type, axes/labels, linearized table of plotted values/milestones, or `mermaid` flowcharts for process/architecture diagrams).
      * Key verbatim anchor quotes formatted as `> "exact quote" [Page N]`.
    - Second: `<!-- EXECUTIVE_SYNTHESIS -->` grounded strictly in the page breakdowns you just produced, citing every claim with `[Page N]`.
+3. NEVER emit placeholder image links (`![](...)` or `<img ...>`). Transcribe EVERY visible word, number, percentage, callout card, badge, and caption on the page, and describe all photographs, visual callouts, charts, and diagrams in detail.
 """
 
 STAGE1_WINDOW_SYSTEM_PROMPT = """You are a high-precision multimodal document reading system modeled after Google Gemini and NotebookLM.
 You analyze rendered PDF page images directly without OCR pre-parsing.
 
 CRITICAL RULES:
-1. Target page images are preceded by explicit `=== PAGE N ===` markers. Attribute all content strictly to its true page number `N`.
-2. If a preceding page image is provided marked with `=== READ-ONLY VISUAL CONTEXT: PAGE N ===`, treat it strictly as context to resolve continuing sentences, table headers, and diagrams across page boundaries. Do NOT generate a breakdown for the context page; extract only the target pages.
-3. For each target page, generate a `## [Page N]` section containing:
-   * Natural reading-order prose in Markdown (headers, lists, footnotes).
+1. Every page image is preceded by an explicit page marker (`=== READ-ONLY VISUAL CONTEXT: PAGE K ===` or `=== PAGE N ===`). Attribute all content strictly to the exact page number in its marker.
+2. If a preceding page image is provided marked with `=== READ-ONLY VISUAL CONTEXT: PAGE K ===`, first emit `## [Page K]` with a single 1-line note of its topic to maintain strict 1-to-1 image alignment, then emit full `## [Page N]` sections for each target page. Use the context page only to resolve continuing sentences or table headers across the boundary; never copy its tables or body onto subsequent pages.
+3. For each target page `=== PAGE N ===`, generate a full `## [Page N]` section containing:
+   * Natural reading-order prose in Markdown (headers, lists, footnotes, speaker/author tags).
    * Tables as complete HTML `<table>` blocks preserving `<thead>`, `<tbody>`, `rowspan`, `colspan`, and exact cell values.
    * Mathematical equations in LaTeX (`\\(...\\)` inline or `\\[...\\]` display).
-   * Figures, charts, and diagrams as structured Visual Data Blocks (chart type, axes/labels, linearized HTML data table of plotted values, or `mermaid` flowcharts for process/architecture diagrams).
+   * Figures, charts, timelines, and diagrams as structured Visual Data Blocks (chart type, axes/labels, linearized table of plotted values/milestones, or `mermaid` flowcharts for process/architecture diagrams).
    * Key verbatim anchor quotes formatted as `> "exact quote" [Page N]`.
-4. Output ONLY the `## [Page N]` sections for the target pages. Do not produce an executive synthesis.
+4. NEVER emit placeholder image links (`![](...)` or `<img ...>`). Transcribe EVERY visible word, number, percentage, callout card, badge, and caption on each page verbatim, and describe all photographs, visual callouts, charts, and diagrams in detail.
+5. Output ONLY the `## [Page ...]` sections. Do not produce an executive synthesis.
 """
 
 STAGE2_SYNTHESIS_SYSTEM_PROMPT = """You are a high-precision document executive synthesis system modeled after Google NotebookLM.
@@ -110,19 +112,40 @@ def build_window_stage1_messages(
         content.append({"type": "image_url", "image_url": {"url": page.data_uri}})
 
     target_page_ranges = format_page_ranges([p.page_number for p in pages])
-    content.append(
-        {
-            "type": "text",
-            "text": (
-                f"Extract ONLY target pages ({target_page_ranges}) into explicit `## [Page N]` sections.\n"
-                f"Do not produce any executive synthesis."
-            ),
-        }
-    )
+    if context_page is not None:
+        closing_text = (
+            f"First output a 1-line `## [Page {context_page.page_number}]` context note for the read-only context image, "
+            f"then extract target pages ({target_page_ranges}) into full `## [Page N]` sections in exact order.\n"
+            f"NEVER use `![](...)` placeholder image tags; transcribe all visible text, numbers, percentages, tables, and timelines.\n"
+            f"Do not produce any executive synthesis."
+        )
+    else:
+        closing_text = (
+            f"Extract target pages ({target_page_ranges}) into explicit `## [Page N]` sections in exact order.\n"
+            f"NEVER use `![](...)` placeholder image tags; transcribe all visible text, numbers, percentages, tables, and timelines.\n"
+            f"Do not produce any executive synthesis."
+        )
+    content.append({"type": "text", "text": closing_text})
     return [
         {"role": "system", "content": STAGE1_WINDOW_SYSTEM_PROMPT},
         {"role": "user", "content": content},
     ]
+
+
+def strip_context_page_section(
+    raw_window_output: str,
+    context_page_number: int | None,
+    first_target_page_number: int,
+) -> str:
+    cleaned = _strip_outer_code_fence(raw_window_output)
+    if context_page_number is None:
+        return cleaned
+    target_heading = f"## [Page {first_target_page_number}]"
+    context_heading = f"## [Page {context_page_number}]"
+    if context_heading in cleaned and target_heading in cleaned:
+        idx = cleaned.index(target_heading)
+        return cleaned[idx:].strip()
+    return cleaned
 
 
 def build_stage2_synthesis_messages(

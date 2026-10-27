@@ -8,7 +8,7 @@ from pathlib import Path
 import pymupdf
 
 PATCH_MULTIPLE = 28
-DEFAULT_MAX_IMAGE_SIDE = 2044
+DEFAULT_MAX_IMAGE_SIDE = 1344
 
 
 class PdfIngestionError(Exception):

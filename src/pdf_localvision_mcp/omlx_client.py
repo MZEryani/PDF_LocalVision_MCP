@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import uuid
 from contextlib import asynccontextmanager
 from typing import Any, AsyncIterator
 
@@ -89,12 +90,15 @@ class OmlxClient:
 
     async def complete_messages(self, messages: list[dict[str, Any]]) -> str:
         await self.ensure_ready()
+        wire_messages = [dict(m) for m in messages]
+        if wire_messages and isinstance(wire_messages[0].get("content"), str):
+            wire_messages[0]["content"] = f"[Request-ID: {uuid.uuid4()}]\n{wire_messages[0]['content']}"
         payload = await self._request(
             "POST",
             "/chat/completions",
             json_body={
                 "model": self.model,
-                "messages": messages,
+                "messages": wire_messages,
                 "temperature": 0.1,
             },
         )

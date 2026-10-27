@@ -28,12 +28,13 @@ from pdf_localvision_mcp.prompts import (
     format_page_ranges,
     format_visual_reading_markdown,
     parse_single_window_response,
+    strip_context_page_section,
 )
 
 mcp = MCPServer("pdf-localvision-mcp")
 
 PAGE_WINDOW_SIZE = 5
-DEFAULT_MAX_CONCURRENCY = 2
+DEFAULT_MAX_CONCURRENCY = 1
 
 
 @dataclass(frozen=True)
@@ -59,9 +60,14 @@ async def _process_window_stage1(
         for attempt in range(2):
             try:
                 res = await adapter.complete_messages(messages)
+                cleaned_res = strip_context_page_section(
+                    res,
+                    context_page.page_number if context_page is not None else None,
+                    target_pages[0].page_number,
+                )
                 return WindowReading(
                     page_numbers=[p.page_number for p in target_pages],
-                    content=res,
+                    content=cleaned_res,
                 )
             except OmlxConnectionError:
                 raise
