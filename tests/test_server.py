@@ -418,12 +418,38 @@ async def test_persistent_window_failure_emits_partial_status_and_agent_warning_
     assert "## [Page 1]" in result
 
 
-async def test_live_omlx_q_vision_smoke_reading(tmp_path: Path) -> None:
+async def _require_live_omlx() -> None:
     client = OmlxClient()
     try:
         await client.ensure_ready()
     except OmlxConnectionError as exc:
         pytest.skip(f"Local oMLX Q-Vision server is not reachable: {exc}")
+
+
+async def test_single_window_pdf_visual_reading_unwraps_outer_markdown_code_fences(
+    tmp_path: Path,
+) -> None:
+    pdf_path = _create_sample_pdf(tmp_path / "fenced.pdf", ["Page 1: Code 9482"])
+    fenced_output = (
+        "```html\n"
+        "<!-- GROUNDED_PAGES -->\n"
+        "## [Page 1]\n"
+        "Verification code 9482.\n"
+        "<!-- EXECUTIVE_SYNTHESIS -->\n"
+        "The verification code is 9482 [Page 1].\n"
+        "```"
+    )
+    adapter = RecordingVlmAdapter(fenced_output)
+
+    result = await read_pdf_vision(str(pdf_path), vlm_adapter=adapter)
+
+    assert "The verification code is 9482 [Page 1]." in result
+    assert "## [Page 1]\nVerification code 9482." in result
+    assert "```html" not in result
+
+
+async def test_live_omlx_q_vision_smoke_reading(tmp_path: Path) -> None:
+    await _require_live_omlx()
 
     pdf_path = _create_sample_pdf(
         tmp_path / "live_smoke.pdf",
@@ -446,12 +472,11 @@ async def test_live_omlx_q_vision_smoke_reading(tmp_path: Path) -> None:
 
 
 async def test_live_smoke_check_skips_cleanly_when_omlx_is_offline(
-    tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("OMLX_BASE_URL", "http://127.0.0.1:9/v1")
     with pytest.raises(pytest.skip.Exception, match="Local oMLX Q-Vision server is not reachable"):
-        await test_live_omlx_q_vision_smoke_reading(tmp_path)
+        await _require_live_omlx()
 
 
 

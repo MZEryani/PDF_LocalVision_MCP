@@ -11,8 +11,28 @@ Instead of extracting embedded PDF text layers or running separate OCR pre-parse
 
 ## Prerequisites: oMLX & `Q-Vision`
 
-1. **Install oMLX** (Apple Silicon LLM/VLM server) and ensure the `Q-Vision` alias is mapped to `Qwen2.5-VL-7B-Instruct-8bit` in `~/.omlx/model_settings.json`.
-2. **Start the oMLX server** on `http://localhost:8000/v1`:
+1. **Install oMLX** on Apple Silicon:
+
+```bash
+brew tap jundot/omlx && brew install omlx
+# or via pip / uv:
+uv tool install omlx
+```
+
+2. **Configure the `Q-Vision` alias** in `~/.omlx/model_settings.json` mapped to `Qwen2.5-VL-7B-Instruct-8bit`:
+
+```json
+{
+  "version": 1,
+  "models": {
+    "Qwen2.5-VL-7B-Instruct-8bit": {
+      "model_alias": "Q-Vision"
+    }
+  }
+}
+```
+
+3. **Start the oMLX server** on `http://localhost:8000/v1`:
 
 ```bash
 # Option A: Start the managed background oMLX daemon (loads configured aliases including Q-Vision)
@@ -22,7 +42,7 @@ omlx start
 omlx serve mlx-community/Qwen2.5-VL-7B-Instruct-8bit --port 8000
 ```
 
-3. **Verify `Q-Vision` is available**:
+4. **Verify `Q-Vision` is available**:
 
 ```bash
 curl http://localhost:8000/v1/models
