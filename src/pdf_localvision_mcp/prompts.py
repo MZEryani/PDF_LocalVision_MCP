@@ -1,11 +1,19 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Any
 
 from pdf_localvision_mcp.ingestion import RasterizedDocument, RenderedPage
 
 GROUNDED_PAGES_MARKER = "<!-- GROUNDED_PAGES -->"
 EXECUTIVE_SYNTHESIS_MARKER = "<!-- EXECUTIVE_SYNTHESIS -->"
+
+
+@dataclass(frozen=True)
+class ParsedSingleWindowReading:
+    executive_synthesis: str
+    grounded_pages: str
+
 
 SINGLE_WINDOW_SYSTEM_PROMPT = """You are a high-precision multimodal document reading system modeled after Google Gemini and NotebookLM.
 You analyze rendered PDF page images directly without OCR pre-parsing.
@@ -65,13 +73,18 @@ def build_single_window_messages(
     ]
 
 
-def parse_single_window_response(raw_response: str) -> tuple[str, str]:
+def parse_single_window_response(raw_response: str) -> ParsedSingleWindowReading:
+    cleaned = raw_response.replace(GROUNDED_PAGES_MARKER, "").strip()
     if EXECUTIVE_SYNTHESIS_MARKER in raw_response:
         before_syn, after_syn = raw_response.split(EXECUTIVE_SYNTHESIS_MARKER, 1)
-        grounded_pages = before_syn.replace(GROUNDED_PAGES_MARKER, "").strip()
-        executive_synthesis = after_syn.strip()
-        return executive_synthesis, grounded_pages
-    return raw_response.replace(GROUNDED_PAGES_MARKER, "").strip(), ""
+        return ParsedSingleWindowReading(
+            executive_synthesis=after_syn.strip(),
+            grounded_pages=before_syn.replace(GROUNDED_PAGES_MARKER, "").strip(),
+        )
+    return ParsedSingleWindowReading(
+        executive_synthesis=cleaned,
+        grounded_pages=cleaned,
+    )
 
 
 def format_visual_reading_markdown(
@@ -90,15 +103,10 @@ def format_visual_reading_markdown(
         "",
         "## Executive Synthesis",
         executive_synthesis.strip(),
+        "",
+        "---",
+        "",
+        "## Grounded Page Breakdown",
+        grounded_pages.strip(),
     ]
-    if grounded_pages.strip():
-        lines.extend(
-            [
-                "",
-                "---",
-                "",
-                "## Grounded Page Breakdown",
-                grounded_pages.strip(),
-            ]
-        )
     return "\n".join(lines).strip() + "\n"

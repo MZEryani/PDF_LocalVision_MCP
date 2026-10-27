@@ -40,14 +40,22 @@ def _snap_dimensions_to_28(width: int, height: int, max_side: int) -> tuple[int,
 def validate_single_pdf_target(path: Path) -> Path:
     if not path.exists():
         raise FileNotFoundError(f"Target Path does not exist: '{path}'")
-    if path.is_file() and path.suffix.lower() != ".pdf":
-        raise ValueError(f"Target Path must have a .pdf extension, got '{path.name}'")
+    if not path.is_file() or path.suffix.lower() != ".pdf":
+        raise ValueError(f"Target Path must be a .pdf file, got '{path}'")
     return path
 
 
-def rasterize_pdf_file(path: Path, dpi: int = 150) -> RasterizedDocument:
+def rasterize_pdf_file(
+    path: Path,
+    dpi: int = 150,
+    max_image_side: int | None = None,
+) -> RasterizedDocument:
     validate_single_pdf_target(path)
-    max_side = int(os.environ.get("OMLX_MAX_IMAGE_SIDE", str(DEFAULT_MAX_IMAGE_SIDE)))
+    resolved_max_side = (
+        max_image_side
+        if max_image_side is not None
+        else int(os.environ.get("OMLX_MAX_IMAGE_SIDE", str(DEFAULT_MAX_IMAGE_SIDE)))
+    )
     doc = pymupdf.open(str(path))
     try:
         total_pages = len(doc)
@@ -55,7 +63,7 @@ def rasterize_pdf_file(path: Path, dpi: int = 150) -> RasterizedDocument:
         for idx in range(total_pages):
             page = doc[idx]
             raw_pix = page.get_pixmap(dpi=dpi, alpha=False)
-            target_w, target_h = _snap_dimensions_to_28(raw_pix.width, raw_pix.height, max_side)
+            target_w, target_h = _snap_dimensions_to_28(raw_pix.width, raw_pix.height, resolved_max_side)
             if (raw_pix.width, raw_pix.height) != (target_w, target_h):
                 pix = pymupdf.Pixmap(raw_pix, target_w, target_h, None)
             else:

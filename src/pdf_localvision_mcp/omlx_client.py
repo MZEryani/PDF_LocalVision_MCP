@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import os
-from typing import Any
+from contextlib import asynccontextmanager
+from typing import Any, AsyncIterator
 
 import httpx
 
@@ -45,24 +46,24 @@ class OmlxClient:
             "Content-Type": "application/json",
         }
 
+    @asynccontextmanager
+    async def _client_session(self) -> AsyncIterator[httpx.AsyncClient]:
+        if self._external_client is not None:
+            yield self._external_client
+        else:
+            async with httpx.AsyncClient(timeout=DEFAULT_TIMEOUT_SECONDS) as client:
+                yield client
+
     async def _request(self, method: str, endpoint: str, json_body: dict[str, Any] | None = None) -> dict[str, Any]:
         url = f"{self.base_url}/{endpoint.lstrip('/')}"
         try:
-            if self._external_client is not None:
-                response = await self._external_client.request(
+            async with self._client_session() as client:
+                response = await client.request(
                     method,
                     url,
                     headers=self._headers(),
                     json=json_body,
                 )
-            else:
-                async with httpx.AsyncClient(timeout=DEFAULT_TIMEOUT_SECONDS) as client:
-                    response = await client.request(
-                        method,
-                        url,
-                        headers=self._headers(),
-                        json=json_body,
-                    )
             response.raise_for_status()
             return response.json()
         except httpx.HTTPError as exc:
@@ -76,7 +77,7 @@ class OmlxClient:
         payload = await self._request("GET", "/models")
         models_data = payload.get("data", [])
         available_ids = [item.get("id") for item in models_data if isinstance(item, dict) and "id" in item]
-        if available_ids and self.model not in available_ids:
+        if self.model not in available_ids:
             raise OmlxConnectionError(
                 _build_remediation_message(
                     self.base_url,

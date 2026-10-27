@@ -34,11 +34,11 @@ async def read_pdf_vision(
 
     messages = build_single_window_messages(doc.pages, prompt=prompt)
     raw_response = await adapter.complete_messages(messages)
-    executive_synthesis, grounded_pages = parse_single_window_response(raw_response)
+    parsed = parse_single_window_response(raw_response)
     return format_visual_reading_markdown(
         doc=doc,
-        executive_synthesis=executive_synthesis,
-        grounded_pages=grounded_pages,
+        executive_synthesis=parsed.executive_synthesis,
+        grounded_pages=parsed.grounded_pages,
     )
 
 
@@ -55,3 +55,7 @@ async def _read_pdf_vision_tool(
 
 def main() -> None:
     mcp.run(transport="stdio")
+
+
+if __name__ == "__main__":
+    main()

@@ -62,7 +62,7 @@ async def test_single_window_pdf_visual_reading_places_executive_synthesis_above
     breakdown_idx = result.index("## [Page 1]")
     assert synthesis_idx < breakdown_idx
 
-    # Verify the multimodal payload sent across the oMLX boundary
+    # Verify the multimodal payload sent across the oMLX seam
     assert len(adapter.calls) == 1
     user_content = adapter.calls[0][-1]["content"]
     text_blocks = [item["text"] for item in user_content if item["type"] == "text"]
