@@ -193,13 +193,22 @@ def build_single_window_messages(
     ]
 
 
+def _strip_outer_code_fence(text: str) -> str:
+    stripped = text.strip()
+    lines = stripped.splitlines()
+    if len(lines) >= 2 and lines[0].strip().startswith("```") and lines[-1].strip() == "```":
+        return "\n".join(lines[1:-1]).strip()
+    return stripped
+
+
 def parse_single_window_response(raw_response: str) -> ParsedSingleWindowReading:
-    cleaned = raw_response.replace(GROUNDED_PAGES_MARKER, "").strip()
-    if EXECUTIVE_SYNTHESIS_MARKER in raw_response:
-        before_syn, after_syn = raw_response.split(EXECUTIVE_SYNTHESIS_MARKER, 1)
+    unwrapped = _strip_outer_code_fence(raw_response)
+    cleaned = unwrapped.replace(GROUNDED_PAGES_MARKER, "").strip()
+    if EXECUTIVE_SYNTHESIS_MARKER in unwrapped:
+        before_syn, after_syn = unwrapped.split(EXECUTIVE_SYNTHESIS_MARKER, 1)
         return ParsedSingleWindowReading(
-            executive_synthesis=after_syn.strip(),
-            grounded_pages=before_syn.replace(GROUNDED_PAGES_MARKER, "").strip(),
+            executive_synthesis=_strip_outer_code_fence(after_syn),
+            grounded_pages=_strip_outer_code_fence(before_syn.replace(GROUNDED_PAGES_MARKER, "")),
         )
     return ParsedSingleWindowReading(
         executive_synthesis=cleaned,

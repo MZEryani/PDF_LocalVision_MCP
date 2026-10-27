@@ -417,3 +417,41 @@ async def test_persistent_window_failure_emits_partial_status_and_agent_warning_
     assert "Synthesis based on available surviving pages 1-5" in result
     assert "## [Page 1]" in result
 
+
+async def test_live_omlx_q_vision_smoke_reading(tmp_path: Path) -> None:
+    client = OmlxClient()
+    try:
+        await client.ensure_ready()
+    except OmlxConnectionError as exc:
+        pytest.skip(f"Local oMLX Q-Vision server is not reachable: {exc}")
+
+    pdf_path = _create_sample_pdf(
+        tmp_path / "live_smoke.pdf",
+        ["ACME Corp Q3 2026 Report\nTotal Revenue: $128M\nOperating Margin: 24%"],
+    )
+
+    result = await read_pdf_vision(
+        str(pdf_path),
+        prompt="What is ACME Corp's Q3 2026 Total Revenue and Operating Margin?",
+        dpi=150,
+    )
+
+    assert "# Visual Reading: live_smoke.pdf" in result
+    assert "## Document Metadata" in result
+    assert "- **Status**: `completed`" in result
+    assert "## Executive Synthesis" in result
+    assert "## Grounded Page Breakdown" in result
+    assert "128" in result
+    assert "24%" in result
+
+
+async def test_live_smoke_check_skips_cleanly_when_omlx_is_offline(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("OMLX_BASE_URL", "http://127.0.0.1:9/v1")
+    with pytest.raises(pytest.skip.Exception, match="Local oMLX Q-Vision server is not reachable"):
+        await test_live_omlx_q_vision_smoke_reading(tmp_path)
+
+
+
