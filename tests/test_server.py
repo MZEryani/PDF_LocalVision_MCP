@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import base64
 from pathlib import Path
 from typing import Any
@@ -23,13 +24,18 @@ def _create_sample_pdf(path: Path, page_texts: list[str], width: float = 612, he
 
 
 class RecordingVlmAdapter:
-    def __init__(self, response_text: str) -> None:
+    def __init__(self, response_text: str | list[str] | None = None) -> None:
         self.response_text = response_text
         self.calls: list[list[dict[str, Any]]] = []
 
     async def complete_messages(self, messages: list[dict[str, Any]]) -> str:
         self.calls.append(messages)
-        return self.response_text
+        if isinstance(self.response_text, list):
+            idx = len(self.calls) - 1
+            if idx < len(self.response_text):
+                return self.response_text[idx]
+            return self.response_text[-1]
+        return self.response_text or ""
 
 
 async def test_single_window_pdf_visual_reading_places_executive_synthesis_above_grounded_page_breakdown(
@@ -220,4 +226,194 @@ async def test_mcp_server_registers_read_pdf_vision_tool_schema() -> None:
     assert set(props.keys()) == {"path", "prompt", "dpi", "pages"}
 
 
+async def test_multi_window_map_reduce_visual_reading_with_boundary_context(
+    tmp_path: Path,
+) -> None:
+    page_texts = [f"Page {i}: Section {i} content" for i in range(1, 8)]
+    pdf_path = _create_sample_pdf(tmp_path / "long_document.pdf", page_texts)
+
+    window_1_output = (
+        "## [Page 1]\nPage 1 breakdown\n\n"
+        "## [Page 2]\nPage 2 breakdown\n\n"
+        "## [Page 3]\nPage 3 breakdown\n\n"
+        "## [Page 4]\nPage 4 breakdown\n\n"
+        "## [Page 5]\nPage 5 breakdown table continuing onto page 6\n"
+    )
+    window_2_output = (
+        "## [Page 6]\nPage 6 continuing table row 42\n\n"
+        "## [Page 7]\nPage 7 concluding notes\n"
+    )
+    stage_2_output = (
+        "### Executive Summary\n"
+        "Multi-window analysis indicates continuous progress across 7 pages [Page 1][Page 7].\n"
+        "### Key Findings\n"
+        "Table spans pages 5 and 6 [Page 5][Page 6]."
+    )
+
+    adapter = RecordingVlmAdapter([window_1_output, window_2_output, stage_2_output])
+
+    result = await read_pdf_vision(str(pdf_path), vlm_adapter=adapter)
+
+    # 1. Output structure checks
+    assert "long_document.pdf" in result
+    assert "- **Pages**: 7" in result
+    assert "- **Status**: `completed`" in result
+    assert "### Executive Summary" in result
+    assert "Multi-window analysis indicates continuous progress" in result
+    assert "## [Page 1]" in result
+    assert "## [Page 5]" in result
+    assert "## [Page 6]" in result
+    assert "## [Page 7]" in result
+
+    # Ordering: Executive Synthesis must precede Grounded Page Breakdown
+    synthesis_pos = result.index("### Executive Summary")
+    breakdown_pos = result.index("## [Page 1]")
+    assert synthesis_pos < breakdown_pos
+
+    # 2. Seam verification: 2 window calls + 1 stage-2 synthesis call
+    assert len(adapter.calls) == 3
+
+    # Window 1: Pages 1-5, no boundary context prefix
+    w1_user_items = adapter.calls[0][-1]["content"]
+    w1_texts = [it["text"] for it in w1_user_items if it["type"] == "text"]
+    assert "=== PAGE 1 ===" in w1_texts
+    assert "=== PAGE 5 ===" in w1_texts
+    assert not any("READ-ONLY" in t for t in w1_texts)
+
+    # Window 2: Preceding page 5 as read-only visual context, then target pages 6-7
+    w2_user_items = adapter.calls[1][-1]["content"]
+    w2_texts = [it["text"] for it in w2_user_items if it["type"] == "text"]
+    assert any("READ-ONLY" in t and "PAGE 5" in t for t in w2_texts)
+    assert "=== PAGE 6 ===" in w2_texts
+    assert "=== PAGE 7 ===" in w2_texts
+
+    # Window 2 visual context is page 5 image
+    context_idx = next(i for i, t in enumerate(w2_user_items) if t.get("type") == "text" and "READ-ONLY" in t.get("text", ""))
+    assert w2_user_items[context_idx + 1]["type"] == "image_url"
+
+    # Stage 2: Synthesis receives combined transcripts and produces Executive Synthesis
+    s2_content = adapter.calls[2][-1]["content"]
+    assert isinstance(s2_content, str) or isinstance(s2_content, list)
+    s2_text = s2_content if isinstance(s2_content, str) else " ".join(c.get("text", "") for c in s2_content)
+    assert "## [Page 1]" in s2_text
+    assert "## [Page 7]" in s2_text
+
+
+async def test_multi_window_concurrency_is_bounded_by_omlx_max_concurrency(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("OMLX_MAX_CONCURRENCY", "2")
+    page_texts = [f"Page {i}" for i in range(1, 16)]  # 3 full windows of 5 pages
+    pdf_path = _create_sample_pdf(tmp_path / "15_pages.pdf", page_texts)
+
+    class ConcurrencyTrackingAdapter:
+        def __init__(self) -> None:
+            self.current_in_flight = 0
+            self.max_in_flight = 0
+
+        async def complete_messages(self, messages: list[dict[str, Any]]) -> str:
+            self.current_in_flight += 1
+            self.max_in_flight = max(self.max_in_flight, self.current_in_flight)
+            await asyncio.sleep(0.04)
+            self.current_in_flight -= 1
+            return "## [Page N]\nSample breakdown content"
+
+    adapter = ConcurrencyTrackingAdapter()
+    result = await read_pdf_vision(str(pdf_path), vlm_adapter=adapter)
+
+    assert "- **Pages**: 15" in result
+    assert adapter.max_in_flight == 2
+
+
+async def test_hierarchical_synthesis_fallback_when_transcripts_exceed_140k_chars(
+    tmp_path: Path,
+) -> None:
+    page_texts = [f"Page {i}" for i in range(1, 11)]  # 2 windows of 5 pages
+    pdf_path = _create_sample_pdf(tmp_path / "huge_doc.pdf", page_texts)
+
+    # Generate huge breakdowns > 140,000 characters total
+    w1_huge = "## [Page 1]\n" + ("Detailed quarterly data metric analysis. " * 2000)  # ~80k chars
+    w2_huge = "## [Page 6]\n" + ("Continuing enterprise architecture breakdown. " * 2000)  # ~80k chars
+    assert len(w1_huge) + len(w2_huge) > 140_000
+
+    intermediate_1 = "### Intermediate Cluster 1\nSummarized cluster 1 metrics [Page 1]."
+    intermediate_2 = "### Intermediate Cluster 2\nSummarized cluster 2 architecture [Page 6]."
+    final_synthesis = "### Executive Summary\nUnified synthesis from hierarchical folding [Page 1][Page 6]."
+
+    adapter = RecordingVlmAdapter([w1_huge, w2_huge, intermediate_1, intermediate_2, final_synthesis])
+    result = await read_pdf_vision(str(pdf_path), vlm_adapter=adapter)
+
+    assert "Unified synthesis from hierarchical folding [Page 1][Page 6]." in result
+    assert "## [Page 1]" in result
+    assert "## [Page 6]" in result
+
+    # Check that hierarchical intermediate synthesis occurred across the seam
+    # Window 1 (idx 0), Window 2 (idx 1), Intermediate 1 (idx 2), Intermediate 2 (idx 3), Final (idx 4)
+    assert len(adapter.calls) >= 4
+    inter_call = adapter.calls[2]
+    inter_role = inter_call[0]["role"]
+    assert inter_role == "system"
+    assert "cluster reducer" in inter_call[0]["content"]
+
+
+async def test_transient_window_error_retries_once_and_succeeds(
+    tmp_path: Path,
+) -> None:
+    page_texts = [f"Page {i}" for i in range(1, 11)]  # 2 windows of 5 pages
+    pdf_path = _create_sample_pdf(tmp_path / "retry_doc.pdf", page_texts)
+
+    class TransientFailureAdapter:
+        def __init__(self) -> None:
+            self.call_count = 0
+
+        async def complete_messages(self, messages: list[dict[str, Any]]) -> str:
+            self.call_count += 1
+            # First window call fails once, then succeeds on retry
+            if self.call_count == 1:
+                raise RuntimeError("Temporary 503 Server Busy")
+            if "## [Page" in str(messages):
+                return "### Executive Summary\nAll 10 pages synthesized successfully [Page 1][Page 10]."
+            return "## [Page N]\nSuccessful window breakdown"
+
+    adapter = TransientFailureAdapter()
+    result = await read_pdf_vision(str(pdf_path), vlm_adapter=adapter)
+
+    assert "- **Status**: `completed`" in result
+    assert "All 10 pages synthesized successfully" in result
+    assert "AGENT NOTICE" not in result
+
+
+async def test_persistent_window_failure_emits_partial_status_and_agent_warning_banner(
+    tmp_path: Path,
+) -> None:
+    page_texts = [f"Page {i}" for i in range(1, 11)]  # Window 1 (1-5), Window 2 (6-10)
+    pdf_path = _create_sample_pdf(tmp_path / "partial_doc.pdf", page_texts)
+
+    class FailingSecondWindowAdapter:
+        async def complete_messages(self, messages: list[dict[str, Any]]) -> str:
+            user_content = messages[-1]["content"]
+            user_text = user_content if isinstance(user_content, str) else " ".join(c.get("text", "") for c in user_content)
+            # Window 2 contains PAGE 6
+            if "PAGE 6" in user_text:
+                raise RuntimeError("Model timeout on complex graphic on page 6")
+            if "DOCUMENT GROUNDED PAGE BREAKDOWNS" in user_text:
+                return "### Executive Summary\nSynthesis based on available surviving pages 1-5 [Page 1]."
+            return "## [Page 1]\nPage 1 content\n\n## [Page 2]\nPage 2 content"
+
+    adapter = FailingSecondWindowAdapter()
+    result = await read_pdf_vision(str(pdf_path), vlm_adapter=adapter)
+
+    # Partial status and metadata
+    assert "- **Status**: `partial`" in result
+    assert "- **Failed Pages**: 6-10" in result
+
+    # Agent warning banner at top
+    assert result.startswith("> [!WARNING] AGENT NOTICE")
+    assert "pages 6-10" in result
+    assert "inform the user" in result
+
+    # Surviving content is present
+    assert "Synthesis based on available surviving pages 1-5" in result
+    assert "## [Page 1]" in result
 
