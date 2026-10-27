@@ -173,29 +173,28 @@ async def test_read_pdf_vision_malformed_pages_rejected_immediately_before_io(tm
 
 
 async def test_read_pdf_vision_partially_out_of_bounds_clamps(tmp_path: Path) -> None:
-    page_texts = [f"Page {i}" for i in range(1, 5)]
-    pdf_path = _create_sample_pdf(tmp_path / "four_pages.pdf", page_texts)
+    page_texts = [f"Page {i}" for i in range(1, 4)]
+    pdf_path = _create_sample_pdf(tmp_path / "three_pages.pdf", page_texts)
 
     model_output = (
         "<!-- GROUNDED_PAGES -->\n"
         "## [Page 1]\nPage 1 breakdown\n\n"
         "## [Page 2]\nPage 2 breakdown\n\n"
-        "## [Page 3]\nPage 3 breakdown\n\n"
-        "## [Page 4]\nPage 4 breakdown\n"
+        "## [Page 3]\nPage 3 breakdown\n"
         "<!-- EXECUTIVE_SYNTHESIS -->\n"
-        "Four page executive synthesis [Page 1][Page 4]."
+        "Three page executive synthesis [Page 1][Page 3]."
     )
     adapter = RecordingVlmAdapter(model_output)
 
     result = await read_pdf_vision(str(pdf_path), pages="1-10", vlm_adapter=adapter)
 
-    assert "- **Pages**: 4" in result
-    assert "- **Pages Processed**: 1-4" in result
+    assert "- **Pages**: 3" in result
+    assert "- **Pages Processed**: 1-3" in result
     assert "- **Status**: `completed`" in result
     assert len(adapter.calls) == 1
     user_items = adapter.calls[0][-1]["content"]
     image_blocks = [it for it in user_items if it["type"] == "image_url"]
-    assert len(image_blocks) == 4
+    assert len(image_blocks) == 3
 
 
 async def test_read_pdf_vision_totally_out_of_bounds_skips_inference(tmp_path: Path) -> None:

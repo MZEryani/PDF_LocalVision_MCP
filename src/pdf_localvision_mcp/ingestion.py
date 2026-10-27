@@ -8,7 +8,7 @@ from pathlib import Path
 import pymupdf
 
 PATCH_MULTIPLE = 28
-DEFAULT_MAX_IMAGE_SIDE = 1344
+DEFAULT_MAX_IMAGE_SIDE = 1792
 
 
 class PdfIngestionError(Exception):
@@ -167,7 +167,7 @@ def discover_pdf_files(target_dir: Path) -> list[Path]:
 
 def rasterize_pdf_file(
     path: Path,
-    dpi: int = 150,
+    dpi: int = 200,
     max_image_side: int | None = None,
     pages: str | None = None,
 ) -> RasterizedDocument:

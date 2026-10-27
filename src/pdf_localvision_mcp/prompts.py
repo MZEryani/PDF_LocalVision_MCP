@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from typing import Any
 
@@ -26,7 +27,8 @@ CRITICAL RULES:
      * Natural reading-order prose in Markdown (headers, lists, footnotes, speaker/author tags).
      * Tables as complete HTML `<table>` blocks preserving `<thead>`, `<tbody>`, `rowspan`, `colspan`, and exact cell values.
      * Mathematical equations in LaTeX (`\\(...\\)` inline or `\\[...\\]` display).
-     * Figures, charts, timelines, and diagrams as structured Visual Data Blocks (chart type, axes/labels, linearized table of plotted values/milestones, or `mermaid` flowcharts for process/architecture diagrams).
+     * Embedded Photographs, Diagrams & Flowcharts: Inspect inside every embedded photograph, screenshot, diagram, and flowchart. Transcribe ALL overlaid scene-text, numbered phases (e.g., "Phase #1: ...", "Phase #2: ..."), directional arrows, bounding-box callouts, and road-sign or badge values (e.g., "50", "50km/h") verbatim.
+     * Charts, Timelines & Gantt Charts: First list the full Legend mapping every category name to its visual bar/series color. For Gantt charts, timelines, and horizontal/vertical bar charts, trace each bar's exact left/start edge and right/end edge straight down to the vertical X-axis gridlines (using odd-numbered midpoints when a bar starts or ends halfway between even-numbered gridlines) and emit a 4-column table: `| Task / Activity | Category (from Legend Color) | Start (X-Axis Gridline) | End (X-Axis Gridline) |`.
      * Key verbatim anchor quotes formatted as `> "exact quote" [Page N]`.
    - Second: `<!-- EXECUTIVE_SYNTHESIS -->` grounded strictly in the page breakdowns you just produced, citing every claim with `[Page N]`.
 3. NEVER emit placeholder image links (`![](...)` or `<img ...>`). Transcribe EVERY visible word, number, percentage, callout card, badge, and caption on the page, and describe all photographs, visual callouts, charts, and diagrams in detail.
@@ -36,16 +38,19 @@ STAGE1_WINDOW_SYSTEM_PROMPT = """You are a high-precision multimodal document re
 You analyze rendered PDF page images directly without OCR pre-parsing.
 
 CRITICAL RULES:
-1. Every page image is preceded by an explicit page marker (`=== READ-ONLY VISUAL CONTEXT: PAGE K ===` or `=== PAGE N ===`). Attribute all content strictly to the exact page number in its marker.
-2. If a preceding page image is provided marked with `=== READ-ONLY VISUAL CONTEXT: PAGE K ===`, first emit `## [Page K]` with a single 1-line note of its topic to maintain strict 1-to-1 image alignment, then emit full `## [Page N]` sections for each target page. Use the context page only to resolve continuing sentences or table headers across the boundary; never copy its tables or body onto subsequent pages.
-3. For each target page `=== PAGE N ===`, generate a full `## [Page N]` section containing:
+1. Every page image is preceded by an explicit page marker (`=== READ-ONLY VISUAL CONTEXT: PAGE K ===` or `=== PAGE N ===`). Attribute all content strictly to the exact page number in its marker. Never copy text, tables, or diagrams from one page image onto another page's section.
+2. For each provided page image, generate a `## [Page N]` section in exact 1-to-1 order containing:
    * Natural reading-order prose in Markdown (headers, lists, footnotes, speaker/author tags).
    * Tables as complete HTML `<table>` blocks preserving `<thead>`, `<tbody>`, `rowspan`, `colspan`, and exact cell values.
    * Mathematical equations in LaTeX (`\\(...\\)` inline or `\\[...\\]` display).
-   * Figures, charts, timelines, and diagrams as structured Visual Data Blocks (chart type, axes/labels, linearized table of plotted values/milestones, or `mermaid` flowcharts for process/architecture diagrams).
+   * Embedded Photographs, Diagrams & Flowcharts: After transcribing all main text and tables on a page, include a `### Visual & Diagram Callouts` sub-section at the bottom of that page's section transcribing any overlaid scene-text, numbered phases (e.g., "Phase #1: ...", "Phase #2: ..."), arrows, and road-sign or badge values (e.g., "50", "50km/h") inside photographs or diagrams on that specific page (or write "None." if that page has no embedded photograph/diagram).
+   * Charts, Timelines & Gantt Charts:
+     a) First list every Legend item and its exact color.
+     b) List all X-axis tick marks/gridline values.
+     c) Output a table with columns: `| Task / Activity | Category (from Legend Color) | Start (X-Axis Gridline) | End (X-Axis Gridline) |` by carefully tracing the left and right edges of each horizontal bar down to the vertical gridlines on the X-axis (using odd-numbered week midpoints like 7, 11, 13, 15, 17 when a bar edge lies halfway between even-numbered gridlines).
    * Key verbatim anchor quotes formatted as `> "exact quote" [Page N]`.
-4. NEVER emit placeholder image links (`![](...)` or `<img ...>`). Transcribe EVERY visible word, number, percentage, callout card, badge, and caption on each page verbatim, and describe all photographs, visual callouts, charts, and diagrams in detail.
-5. Output ONLY the `## [Page ...]` sections. Do not produce an executive synthesis.
+3. NEVER emit placeholder image links (`![](...)` or `<img ...>`). Transcribe EVERY visible word, number, percentage, callout card, badge, and caption on each page verbatim.
+4. Output ONLY the `## [Page ...]` sections. Do not produce an executive synthesis.
 """
 
 STAGE2_SYNTHESIS_SYSTEM_PROMPT = """You are a high-precision document executive synthesis system modeled after Google NotebookLM.
@@ -54,10 +59,11 @@ You receive structured Grounded Page Breakdowns of a document and synthesize the
 CRITICAL RULES:
 1. Every claim, finding, table figure, and quote MUST carry an inline `[Page N]` citation grounded strictly in the provided page breakdowns.
 2. Ground all numbers and tables verbatim.
+3. Under `### Diagrams & Visual Analyses`, preserve all extracted flowchart phases, embedded diagram callouts and sign values, chart legend categories, and Gantt timeline task start/end ranges verbatim with `[Page N]` citations.
 """
 
 STAGE2_HIERARCHICAL_INTERMEDIATE_PROMPT = """You are a document synthesis cluster reducer.
-Condense the following page breakdowns into an intermediate grounded synthesis preserving all key metrics, findings, table figures, and inline `[Page N]` citations.
+Condense the following page breakdowns into an intermediate grounded synthesis preserving all key metrics, findings, table figures, diagram phases, chart legends, Gantt timeline spans, and inline `[Page N]` citations.
 """
 
 
@@ -66,7 +72,7 @@ DEFAULT_EXECUTIVE_SYNTHESIS_STRUCTURE = (
     "### Executive Summary\n"
     "### Key Narratives & Findings\n"
     "### Extracted Tabular Data & Metrics\n"
-    "### Diagrams & Visual Analyses\n"
+    "### Diagrams & Visual Analyses (include all flowchart phases, embedded sign/badge values, chart legend categories, and Gantt task start/end ranges)\n"
     "### Critical Citations Index\n"
     "Every claim, figure, and quote MUST carry an inline `[Page N]` citation."
 )
@@ -100,8 +106,7 @@ def build_window_stage1_messages(
                 "type": "text",
                 "text": (
                     f"=== READ-ONLY VISUAL CONTEXT: PAGE {context_page.page_number} ===\n"
-                    f"Use this page only as read-only visual context to resolve split sentences and continuing table headers. "
-                    f"Do NOT generate a breakdown for Page {context_page.page_number}."
+                    f"This image is Page {context_page.page_number} (`## [Page {context_page.page_number}]`), provided as preceding visual context to resolve split sentences and continuing table headers."
                 ),
             }
         )
@@ -111,20 +116,20 @@ def build_window_stage1_messages(
         content.append({"type": "text", "text": f"=== PAGE {page.page_number} ==="})
         content.append({"type": "image_url", "image_url": {"url": page.data_uri}})
 
-    target_page_ranges = format_page_ranges([p.page_number for p in pages])
-    if context_page is not None:
-        closing_text = (
-            f"First output a 1-line `## [Page {context_page.page_number}]` context note for the read-only context image, "
-            f"then extract target pages ({target_page_ranges}) into full `## [Page N]` sections in exact order.\n"
-            f"NEVER use `![](...)` placeholder image tags; transcribe all visible text, numbers, percentages, tables, and timelines.\n"
-            f"Do not produce any executive synthesis."
-        )
-    else:
-        closing_text = (
-            f"Extract target pages ({target_page_ranges}) into explicit `## [Page N]` sections in exact order.\n"
-            f"NEVER use `![](...)` placeholder image tags; transcribe all visible text, numbers, percentages, tables, and timelines.\n"
-            f"Do not produce any executive synthesis."
-        )
+    all_page_numbers = (
+        [context_page.page_number, *[p.page_number for p in pages]]
+        if context_page is not None
+        else [p.page_number for p in pages]
+    )
+    all_page_ranges = format_page_ranges(all_page_numbers)
+    all_headings = ", ".join(f"`## [Page {p}]`" for p in all_page_numbers)
+    closing_text = (
+        f"Extract pages ({all_page_ranges}) into explicit, full {all_headings} sections in exact order.\n"
+        f"Under each `## [Page N]` heading, first write that page's main slide title, then transcribe all text cards, lists, and tables in full, and finally include a `### Visual & Diagram Callouts` sub-section transcribing any overlaid scene-text, phase labels (e.g., 'Phase #1', 'Phase #2'), and sign values (e.g., '50', '50km/h') inside photographs/diagrams on that page (or 'None' if none).\n"
+        f"On any page with a Gantt or timeline chart, list every Legend category and its color, then output a 4-column table (`| Task / Activity | Category (from Legend Color) | Start (X-Axis Gridline) | End (X-Axis Gridline) |`).\n"
+        f"NEVER use `![](...)` placeholder image tags; transcribe all visible text, numbers, percentages, tables, and timelines in full.\n"
+        f"Do not produce any executive synthesis."
+    )
     content.append({"type": "text", "text": closing_text})
     return [
         {"role": "system", "content": STAGE1_WINDOW_SYSTEM_PROMPT},
@@ -136,8 +141,15 @@ def strip_context_page_section(
     raw_window_output: str,
     context_page_number: int | None,
     first_target_page_number: int,
+    target_page_numbers: list[int] | None = None,
 ) -> str:
     cleaned = _strip_outer_code_fence(raw_window_output)
+    cleaned = re.sub(r"(?m)^(?:#+\s+)+## (\[Page \d+\])", r"## \1", cleaned)
+    cleaned = re.sub(
+        r"(?mi)\n*### Visual & Diagram Callouts\s*\n+(?:[-*]\s*)?(?:none\.?|no [^\n]+)\s*",
+        "\n\n",
+        cleaned,
+    ).strip()
     if context_page_number is None:
         return cleaned
     target_heading = f"## [Page {first_target_page_number}]"
@@ -145,6 +157,26 @@ def strip_context_page_section(
     if context_heading in cleaned and target_heading in cleaned:
         idx = cleaned.index(target_heading)
         return cleaned[idx:].strip()
+
+    # Fallback: if the model started numbering at first_target_page_number on the context image
+    # and emitted len(target_page_numbers) + 1 sections, drop the first section and re-index.
+    if target_page_numbers:
+        matches = list(re.finditer(r"(?m)^## \[Page (\d+)\]", cleaned))
+        if len(matches) == len(target_page_numbers) + 1:
+            reindexed_parts: list[str] = []
+            for idx_m, page_num in enumerate(target_page_numbers):
+                sec_start = matches[idx_m + 1].start()
+                sec_end = matches[idx_m + 2].start() if idx_m + 2 < len(matches) else len(cleaned)
+                sec_text = cleaned[sec_start:sec_end]
+                sec_text = re.sub(
+                    r"^## \[Page \d+\]",
+                    f"## [Page {page_num}]",
+                    sec_text,
+                    count=1,
+                )
+                reindexed_parts.append(sec_text.strip())
+            return "\n\n".join(reindexed_parts).strip()
+
     return cleaned
 
 

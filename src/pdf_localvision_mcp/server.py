@@ -33,7 +33,7 @@ from pdf_localvision_mcp.prompts import (
 
 mcp = MCPServer("pdf-localvision-mcp")
 
-PAGE_WINDOW_SIZE = 5
+PAGE_WINDOW_SIZE = 3
 DEFAULT_MAX_CONCURRENCY = 1
 
 
@@ -64,6 +64,7 @@ async def _process_window_stage1(
                     res,
                     context_page.page_number if context_page is not None else None,
                     target_pages[0].page_number,
+                    [p.page_number for p in target_pages],
                 )
                 return WindowReading(
                     page_numbers=[p.page_number for p in target_pages],
@@ -111,7 +112,7 @@ async def _run_stage2_synthesis(
 async def _read_single_pdf_document(
     target_path: Path,
     prompt: str | None = None,
-    dpi: int = 150,
+    dpi: int = 200,
     pages: str | None = None,
     *,
     adapter: VlmAdapter,
@@ -202,7 +203,7 @@ async def _process_directory_batch(
     target_dir: Path,
     pdf_files: list[Path],
     prompt: str | None = None,
-    dpi: int = 150,
+    dpi: int = 200,
     pages: str | None = None,
     *,
     adapter: VlmAdapter,
@@ -276,7 +277,7 @@ async def _process_directory_batch(
 async def read_pdf_vision(
     path: str,
     prompt: str | None = None,
-    dpi: int = 150,
+    dpi: int = 200,
     pages: str | None = None,
     *,
     vlm_adapter: VlmAdapter | None = None,
@@ -313,7 +314,7 @@ async def read_pdf_vision(
 async def _read_pdf_vision_tool(
     path: str,
     prompt: str | None = None,
-    dpi: int = 150,
+    dpi: int = 200,
     pages: str | None = None,
 ) -> str:
     """Perform a native multimodal Visual Reading of a PDF file or directory of PDFs using local oMLX Q-Vision."""

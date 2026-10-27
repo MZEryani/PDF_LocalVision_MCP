@@ -184,8 +184,8 @@ async def test_directory_batch_resilience_isolates_corrupted_and_encrypted_files
 async def test_directory_batching_partial_document_failure_emits_agent_warning_with_pages(
     tmp_path: Path,
 ) -> None:
-    # 2 documents: doc1 has 10 pages and partially fails on pages 6-10; doc2 has 1 page and succeeds
-    page_texts_1 = [f"Page {i}" for i in range(1, 11)]
+    # 2 documents: doc1 has 6 pages and partially fails on pages 4-6; doc2 has 1 page and succeeds
+    page_texts_1 = [f"Page {i}" for i in range(1, 7)]
     _create_sample_pdf(tmp_path / "doc1_partial.pdf", page_texts_1)
     _create_sample_pdf(tmp_path / "doc2_valid.pdf", ["Single page"])
 
@@ -193,8 +193,8 @@ async def test_directory_batching_partial_document_failure_emits_agent_warning_w
         async def complete_messages(self, messages: list[dict[str, Any]]) -> str:
             user_content = messages[-1]["content"]
             user_text = user_content if isinstance(user_content, str) else " ".join(c.get("text", "") for c in user_content)
-            if "PAGE 6" in user_text:
-                raise RuntimeError("Page 6 error")
+            if "=== PAGE 4 ===" in user_text:
+                raise RuntimeError("Page 4 error")
             if "DOCUMENT GROUNDED PAGE BREAKDOWNS" in user_text:
                 return "### Executive Summary\nPartial synthesis [Page 1]."
             return "## [Page 1]\nValid content"
@@ -205,7 +205,7 @@ async def test_directory_batching_partial_document_failure_emits_agent_warning_w
     assert "## Batch Summary" in result
     assert "> [!WARNING] AGENT NOTICE" in result
     assert "doc1_partial.pdf" in result
-    assert "pages 6-10" in result
+    assert "pages 4-6" in result
 
 
 

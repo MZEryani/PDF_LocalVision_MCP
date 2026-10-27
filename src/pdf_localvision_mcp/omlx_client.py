@@ -99,7 +99,7 @@ class OmlxClient:
             json_body={
                 "model": self.model,
                 "messages": wire_messages,
-                "temperature": 0.1,
+                "temperature": 0.0,
             },
         )
         choices = payload.get("choices", [])
