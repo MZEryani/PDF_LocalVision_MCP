@@ -1,0 +1,3 @@
+# Adaptive Single-Pass and Map-Reduce Page Windowing
+
+We process PDFs in bounded 5-page **Page Windows** (`~13k` visual tokens per window at `150` DPI) with a default concurrency of `2`, returning a single-pass reading for documents up to 5 pages and a two-stage Map-Reduce reading (per-window structural extraction followed by a document-level synthesis pass on `Q-Vision`) for longer documents. Sending an entire multi-decade page PDF in a single multimodal request exceeds VLM visual attention quality thresholds and risks tripping oMLX unified-memory prefill guards on Apple Silicon, whereas 5-page windows keep per-request prefill within safe memory bounds while still producing a unified document-level reading.

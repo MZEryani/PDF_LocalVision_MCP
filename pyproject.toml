@@ -1,0 +1,37 @@
+[project]
+name = "pdf-localvision-mcp"
+version = "0.1.0"
+description = "MCP server that performs native multimodal Visual Readings of PDF documents using a local oMLX Q-Vision model."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "httpx>=0.27.0",
+    "mcp>=1.2.0",
+    "pymupdf>=1.24.0",
+]
+
+[project.scripts]
+pdf-localvision-mcp = "pdf_localvision_mcp.server:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/pdf_localvision_mcp"]
+
+[dependency-groups]
+dev = [
+    "pyright>=1.1.390",
+    "pytest>=8.3.0",
+    "pytest-asyncio>=0.24.0",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[tool.pyright]
+include = ["src", "tests"]
+pythonVersion = "3.11"
+typeCheckingMode = "standard"

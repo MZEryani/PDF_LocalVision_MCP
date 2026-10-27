@@ -1,0 +1,1 @@
+"""PDF LocalVision MCP package."""

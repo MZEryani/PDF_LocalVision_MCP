@@ -1,0 +1,3 @@
+# Pure Visual PDF Ingestion via In-Memory Rasterization
+
+We ingest PDF documents exclusively by rasterizing pages in-memory to PNG images using `pymupdf` (with dimensions snapped to multiples of `28` and capped at `2044px` to match `Qwen2.5-VL`'s `28x28` vision patch merger and oMLX's `2048px` limit) and sending them directly to `Q-Vision`, deliberately bypassing PDF text-layer extraction and traditional OCR pre-parsing. Native PDF text layers frequently corrupt multi-column reading order, drop complex table structures (`rowspan`/`colspan`), and completely omit information locked in charts and diagrams; rendering each page as an image preserves full visual and structural fidelity at the cost of higher visual token throughput.
