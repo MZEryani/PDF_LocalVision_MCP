@@ -194,11 +194,12 @@ def build_single_window_messages(
 
 
 def _strip_outer_code_fence(text: str) -> str:
-    stripped = text.strip()
-    lines = stripped.splitlines()
-    if len(lines) >= 2 and lines[0].strip().startswith("```") and lines[-1].strip() == "```":
-        return "\n".join(lines[1:-1]).strip()
-    return stripped
+    lines = text.strip().splitlines()
+    while lines and lines[0].strip().startswith("```"):
+        lines.pop(0)
+    while lines and lines[-1].strip().startswith("```"):
+        lines.pop()
+    return "\n".join(lines).strip()
 
 
 def parse_single_window_response(raw_response: str) -> ParsedSingleWindowReading:
