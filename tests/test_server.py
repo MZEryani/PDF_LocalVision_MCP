@@ -213,7 +213,7 @@ async def test_missing_target_model_on_omlx_raises_remediation_error(
     http_client = httpx.AsyncClient(transport=httpx.MockTransport(missing_model_handler))
     client = OmlxClient(model="Q-Vision", http_client=http_client)
 
-    with pytest.raises(OmlxConnectionError, match="not found in available oMLX models"):
+    with pytest.raises(OmlxConnectionError, match=r"not found in available (?:oMLX )?models"):
         await read_pdf_vision(str(pdf_path), vlm_adapter=client)
 
 

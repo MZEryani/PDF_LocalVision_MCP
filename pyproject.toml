@@ -1,14 +1,35 @@
 [project]
 name = "pdf-localvision-mcp"
 version = "0.1.0"
-description = "MCP server that performs native multimodal Visual Readings of PDF documents using a local oMLX Q-Vision model."
+description = "MCP server that performs native multimodal Visual Readings of PDF documents using local or OpenAI-compatible vision models."
 readme = "README.md"
+license = "MIT"
+authors = [
+    { name = "Majd Al-Eryani", email = "male0027@student.monash.edu" },
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+keywords = ["mcp", "pdf", "vision", "multimodal", "vlm", "omlx", "openai"]
 requires-python = ">=3.11"
 dependencies = [
     "httpx>=0.27.0",
     "mcp>=1.2.0",
     "pymupdf>=1.24.0",
 ]
+
+[project.urls]
+Homepage = "https://github.com/majdaleryani/pdf-localvision-mcp"
+Repository = "https://github.com/majdaleryani/pdf-localvision-mcp"
+Issues = "https://github.com/majdaleryani/pdf-localvision-mcp/issues"
 
 [project.scripts]
 pdf-localvision-mcp = "pdf_localvision_mcp.server:main"

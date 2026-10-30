@@ -1,17 +1,19 @@
 # PDF LocalVision MCP
 
-An MCP server that performs native multimodal **Visual Readings** of PDF documents using a local [oMLX](https://github.com/jundot/omlx) vision-language model (`Q-Vision`).
+An MCP server that performs native multimodal **Visual Readings** of PDF documents using local vision-language models (via [oMLX](https://github.com/jundot/omlx) on Apple Silicon or any OpenAI-compatible vision endpoint such as Ollama, vLLM, or LM Studio).
 
-Instead of extracting embedded PDF text layers or running separate OCR pre-parsers, `pdf-localvision-mcp` rasterizes PDF pages in-memory to PNG (`pymupdf`) with dimensions snapped to multiples of `28` (`<= 2044px`) and processes them through a two-tier grounded reading pipeline:
+Instead of extracting embedded PDF text layers or running separate OCR pre-parsers, `pdf-localvision-mcp` rasterizes PDF pages in-memory to PNG (`pymupdf`) with dimensions snapped to multiples of `28` (`<= 1792px` by default) and processes them through a two-tier grounded reading pipeline:
 
-1. **Grounded Page Breakdown (`## [Page N]`)**: Reading-order Markdown prose, HTML `<table>` tags (preserving `rowspan`/`colspan`), LaTeX equations (`\(...\)` / `\[...\]`), linearized chart data tables & Mermaid diagrams, and verbatim anchor quotes (`> "..." [Page N]`).
+1. **Grounded Page Breakdown (`## [Page N]`)**: Reading-order Markdown prose, HTML `<table>` tags (preserving `rowspan`/`colspan`), LaTeX equations (`\(...\)` / `\[...\]`), linearized chart data tables & diagrams, and verbatim anchor quotes (`> "..." [Page N]`).
 2. **Executive Synthesis**: A source-grounded document synthesis where every claim carries an inline `[Page N]` citation.
 
 ---
 
-## Prerequisites: oMLX & `Q-Vision`
+## Prerequisites: Vision Model Backend
 
-1. **Install oMLX** on Apple Silicon:
+### Option A: Local oMLX (Recommended for Apple Silicon)
+
+1. **Install oMLX**:
 
 ```bash
 brew tap jundot/omlx && brew install omlx
@@ -35,54 +37,63 @@ uv tool install omlx
 3. **Start the oMLX server** on `http://localhost:8000/v1`:
 
 ```bash
-# Option A: Start the managed background oMLX daemon (loads configured aliases including Q-Vision)
+# Option 1: Start the managed background daemon
 omlx start
 
-# Option B: Serve Qwen2.5-VL directly on port 8000
+# Option 2: Serve directly
 omlx serve mlx-community/Qwen2.5-VL-7B-Instruct-8bit --port 8000
 ```
 
-4. **Verify `Q-Vision` is available**:
+### Option B: Ollama, vLLM, or any OpenAI-Compatible Vision Server
+
+Run any vision model supporting image inputs (e.g., `llama3.2-vision`, `qwen2.5-vl`, etc.):
 
 ```bash
-curl http://localhost:8000/v1/models
+ollama run llama3.2-vision
 ```
+
+Then point `pdf-localvision-mcp` to it via `VISION_BASE_URL` (or `OPENAI_BASE_URL`) and `VISION_MODEL` (or `OPENAI_MODEL`).
 
 ---
 
 ## Running & Registering the MCP Server
 
-### CLI Execution (`uv run` / `uvx` / `mcp run`)
+### Quick Start with `uvx` (No clone needed)
 
 ```bash
-# Run via uv from the repository directory
-uv --directory /Users/majd/Documents/Coding/PDF_LocalVision_MCP run pdf-localvision-mcp
-
-# Run via uvx directly from the local repository path
-uvx --from /Users/majd/Documents/Coding/PDF_LocalVision_MCP pdf-localvision-mcp
-
-# Run via the MCP CLI
-uv --directory /Users/majd/Documents/Coding/PDF_LocalVision_MCP run mcp run src/pdf_localvision_mcp/server.py
+# Run directly from GitHub
+uvx --from git+https://github.com/majdaleryani/pdf-localvision-mcp pdf-localvision-mcp
 ```
 
-### 1. Antigravity (`~/.gemini/config/mcp_config.json`)
+### From Local Clone
 
-Add `pdf-localvision` to `~/.gemini/config/mcp_config.json`:
+```bash
+git clone https://github.com/majdaleryani/pdf-localvision-mcp.git
+cd pdf-localvision-mcp
+
+# Run via uv
+uv run pdf-localvision-mcp
+```
+
+---
+
+### Client Configuration Examples
+
+#### 1. Antigravity (`~/.gemini/config/mcp_config.json`)
 
 ```json
 {
   "mcpServers": {
     "pdf-localvision": {
-      "command": "/Users/majd/.local/bin/uv",
+      "command": "uvx",
       "args": [
-        "--directory",
-        "/Users/majd/Documents/Coding/PDF_LocalVision_MCP",
-        "run",
+        "--from",
+        "git+https://github.com/majdaleryani/pdf-localvision-mcp",
         "pdf-localvision-mcp"
       ],
       "env": {
-        "OMLX_BASE_URL": "http://localhost:8000/v1",
-        "OMLX_MODEL": "Q-Vision"
+        "VISION_BASE_URL": "http://localhost:8000/v1",
+        "VISION_MODEL": "Q-Vision"
       },
       "timeout": 300000
     }
@@ -90,50 +101,48 @@ Add `pdf-localvision` to `~/.gemini/config/mcp_config.json`:
 }
 ```
 
-### 2. Claude Desktop (`~/Library/Application Support/Claude/claude_desktop_config.json`)
+#### 2. Claude Desktop (`~/Library/Application Support/Claude/claude_desktop_config.json`)
 
 ```json
 {
   "mcpServers": {
     "pdf-localvision": {
-      "command": "/Users/majd/.local/bin/uv",
+      "command": "uvx",
       "args": [
-        "--directory",
-        "/Users/majd/Documents/Coding/PDF_LocalVision_MCP",
-        "run",
+        "--from",
+        "git+https://github.com/majdaleryani/pdf-localvision-mcp",
         "pdf-localvision-mcp"
       ],
       "env": {
-        "OMLX_BASE_URL": "http://localhost:8000/v1",
-        "OMLX_MODEL": "Q-Vision"
+        "VISION_BASE_URL": "http://localhost:8000/v1",
+        "VISION_MODEL": "Q-Vision"
       }
     }
   }
 }
 ```
 
-Or with Claude Code CLI:
+Or via Claude Code CLI:
 
 ```bash
-claude mcp add pdf-localvision -- uv --directory /Users/majd/Documents/Coding/PDF_LocalVision_MCP run pdf-localvision-mcp
+claude mcp add pdf-localvision -- uvx --from git+https://github.com/majdaleryani/pdf-localvision-mcp pdf-localvision-mcp
 ```
 
-### 3. Cursor (`~/.cursor/mcp.json` or `.cursor/mcp.json`)
+#### 3. Cursor (`~/.cursor/mcp.json` or `.cursor/mcp.json`)
 
 ```json
 {
   "mcpServers": {
     "pdf-localvision": {
-      "command": "/Users/majd/.local/bin/uv",
+      "command": "uvx",
       "args": [
-        "--directory",
-        "/Users/majd/Documents/Coding/PDF_LocalVision_MCP",
-        "run",
+        "--from",
+        "git+https://github.com/majdaleryani/pdf-localvision-mcp",
         "pdf-localvision-mcp"
       ],
       "env": {
-        "OMLX_BASE_URL": "http://localhost:8000/v1",
-        "OMLX_MODEL": "Q-Vision"
+        "VISION_BASE_URL": "http://localhost:8000/v1",
+        "VISION_MODEL": "Q-Vision"
       }
     }
   }
@@ -155,13 +164,13 @@ claude mcp add pdf-localvision -- uv --directory /Users/majd/Documents/Coding/PD
 
 ## Environment Variables
 
-| Variable | Default | Description |
-| :--- | :--- | :--- |
-| `OMLX_BASE_URL` | `http://localhost:8000/v1` | OpenAI-compatible base URL of the local oMLX server. |
-| `OMLX_MODEL` | `Q-Vision` | Vision model alias or ID served by oMLX. |
-| `OMLX_API_KEY` | `omlx` | Bearer token sent in the `Authorization` header to oMLX. |
-| `OMLX_MAX_CONCURRENCY` | `2` | Maximum concurrent 5-page **Page Windows** processed in multi-window PDFs. |
-| `OMLX_MAX_IMAGE_SIDE` | `2044` | Maximum pixel length of the longest rendered page edge (snapped down to a multiple of `28`). |
+| Variable | Fallback Keys | Default | Description |
+| :--- | :--- | :--- | :--- |
+| `VISION_BASE_URL` | `OPENAI_BASE_URL`, `OMLX_BASE_URL` | `http://localhost:8000/v1` | Base URL of the OpenAI-compatible vision server. |
+| `VISION_MODEL` | `OPENAI_MODEL`, `OMLX_MODEL` | `Q-Vision` | Vision model ID or alias. If omitted and endpoint hosts a single model, auto-selects that model. |
+| `VISION_API_KEY` | `OPENAI_API_KEY`, `OMLX_API_KEY` | `omlx` | Bearer token for authorization. |
+| `OMLX_MAX_CONCURRENCY` | — | `1` | Maximum concurrent 3-page **Page Windows** processed in multi-window PDFs. |
+| `OMLX_MAX_IMAGE_SIDE` | — | `1792` | Maximum pixel length of the longest rendered page edge (snapped down to a multiple of `28`). |
 
 ---
 
@@ -171,3 +180,9 @@ claude mcp add pdf-localvision -- uv --directory /Users/majd/Documents/Coding/PD
 uv run pytest
 uv run pyright
 ```
+
+---
+
+## License
+
+MIT License. See [LICENSE](LICENSE) for details.
