@@ -28,6 +28,20 @@ def _build_remediation_message(base_url: str, model: str, detail: str) -> str:
     )
 
 
+def _resolve_env_cascade(
+    explicit_value: str | None,
+    var_suffixes: list[str],
+    default_value: str | None = None,
+) -> str | None:
+    if explicit_value is not None:
+        return explicit_value
+    for var in var_suffixes:
+        val = os.environ.get(var)
+        if val is not None and val.strip():
+            return val.strip()
+    return default_value
+
+
 class OmlxClient:
     def __init__(
         self,
@@ -36,28 +50,27 @@ class OmlxClient:
         api_key: str | None = None,
         http_client: httpx.AsyncClient | None = None,
     ) -> None:
-        self.base_url = (
-            base_url
-            or os.environ.get("VISION_BASE_URL")
-            or os.environ.get("OPENAI_BASE_URL")
-            or os.environ.get("OMLX_BASE_URL")
-            or DEFAULT_OMLX_BASE_URL
-        ).rstrip("/")
-        explicit_model = (
-            model
-            or os.environ.get("VISION_MODEL")
-            or os.environ.get("OPENAI_MODEL")
-            or os.environ.get("OMLX_MODEL")
+        resolved_base_url = _resolve_env_cascade(
+            base_url,
+            ["VISION_BASE_URL", "OPENAI_BASE_URL", "OMLX_BASE_URL"],
+            DEFAULT_OMLX_BASE_URL,
+        )
+        self.base_url = (resolved_base_url or DEFAULT_OMLX_BASE_URL).rstrip("/")
+
+        explicit_model = _resolve_env_cascade(
+            model,
+            ["VISION_MODEL", "OPENAI_MODEL", "OMLX_MODEL"],
+            None,
         )
         self.model = explicit_model or DEFAULT_OMLX_MODEL
         self._user_specified_model = explicit_model is not None
-        self.api_key = (
-            api_key
-            or os.environ.get("VISION_API_KEY")
-            or os.environ.get("OPENAI_API_KEY")
-            or os.environ.get("OMLX_API_KEY")
-            or DEFAULT_OMLX_API_KEY
+
+        resolved_api_key = _resolve_env_cascade(
+            api_key,
+            ["OPENAI_API_KEY", "VISION_API_KEY", "OMLX_API_KEY"],
+            DEFAULT_OMLX_API_KEY,
         )
+        self.api_key = resolved_api_key or DEFAULT_OMLX_API_KEY
         self._external_client = http_client
         self._health_checked = False
 
@@ -104,8 +117,13 @@ class OmlxClient:
         ]
 
         if not available_ids:
-            self._health_checked = True
-            return
+            raise OmlxConnectionError(
+                _build_remediation_message(
+                    self.base_url,
+                    self.model,
+                    "Endpoint returned an empty model list from /models",
+                )
+            )
 
         # 1. Exact match
         if self.model in available_ids:
@@ -117,14 +135,15 @@ class OmlxClient:
         target = self.model.lower()
         target_base = target.split("/")[-1]
         for available_id in available_ids:
-            cand = available_id.lower()
-            cand_base = cand.split("/")[-1]
+            candidate_id = available_id.lower()
+            candidate_basename = candidate_id.split("/")[-1]
             if (
-                target == cand
-                or target_base == cand_base
-                or cand.startswith(target)
-                or cand.endswith(target)
-                or target in cand_base
+                target == candidate_id
+                or target_base == candidate_basename
+                or candidate_id.startswith(target)
+                or candidate_id.endswith(target)
+                or candidate_basename.startswith(target_base)
+                or candidate_basename.endswith(target_base)
             ):
                 matched_id = available_id
                 break
@@ -134,11 +153,21 @@ class OmlxClient:
             self._health_checked = True
             return
 
-        # 3. Auto-select sole available model if caller did not explicitly specify a model
-        if not self._user_specified_model and len(available_ids) == 1:
-            self.model = available_ids[0]
-            self._health_checked = True
-            return
+        # 3. Auto-select if caller did not explicitly specify a model
+        if not self._user_specified_model:
+            if len(available_ids) == 1:
+                self.model = available_ids[0]
+                self._health_checked = True
+                return
+            vision_candidates = [
+                aid
+                for aid in available_ids
+                if any(v in aid.lower() for v in ("vision", "vl", "llava", "omni", "multimodal"))
+            ]
+            if len(vision_candidates) == 1:
+                self.model = vision_candidates[0]
+                self._health_checked = True
+                return
 
         raise OmlxConnectionError(
             _build_remediation_message(

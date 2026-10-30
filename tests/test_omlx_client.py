@@ -128,6 +128,48 @@ async def test_ensure_ready_raises_generic_remediation_on_mismatch() -> None:
         assert "VISION_BASE_URL" in msg
 
 
+async def test_ensure_ready_auto_selects_sole_vision_model_on_multi_model_endpoint() -> None:
+    async def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/v1/models":
+            return httpx.Response(
+                200,
+                json={
+                    "data": [
+                        {"id": "text-embedding-3"},
+                        {"id": "deepseek-coder"},
+                        {"id": "qwen2.5-vl-7b-instruct"},
+                    ]
+                },
+            )
+        return httpx.Response(404)
+
+    transport = httpx.MockTransport(handler)
+    async with httpx.AsyncClient(transport=transport) as http_client:
+        client = OmlxClient(
+            base_url="http://mock/v1",
+            http_client=http_client,
+        )
+        await client.ensure_ready()
+        assert client.model == "qwen2.5-vl-7b-instruct"
+
+
+async def test_ensure_ready_raises_error_on_empty_models_list() -> None:
+    async def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/v1/models":
+            return httpx.Response(200, json={"data": []})
+        return httpx.Response(404)
+
+    transport = httpx.MockTransport(handler)
+    async with httpx.AsyncClient(transport=transport) as http_client:
+        client = OmlxClient(
+            base_url="http://mock/v1",
+            http_client=http_client,
+        )
+        with pytest.raises(OmlxConnectionError) as exc_info:
+            await client.ensure_ready()
+        assert "empty model list" in str(exc_info.value)
+
+
 def test_project_metadata_and_license_are_complete() -> None:
     import tomllib
     from pathlib import Path
@@ -149,4 +191,10 @@ def test_project_metadata_and_license_are_complete() -> None:
     assert "urls" in project
     assert "Homepage" in project["urls"]
     assert "Repository" in project["urls"]
+    assert "Documentation" in project["urls"]
+
+    sdist_cfg = data.get("tool", {}).get("hatch", {}).get("build", {}).get("targets", {}).get("sdist", {})
+    assert ".scratch" in sdist_cfg.get("exclude", [])
+    assert ".agents" in sdist_cfg.get("exclude", [])
+
 

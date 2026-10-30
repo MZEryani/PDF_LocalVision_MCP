@@ -28,6 +28,7 @@ dependencies = [
 
 [project.urls]
 Homepage = "https://github.com/majdaleryani/pdf-localvision-mcp"
+Documentation = "https://github.com/majdaleryani/pdf-localvision-mcp#readme"
 Repository = "https://github.com/majdaleryani/pdf-localvision-mcp"
 Issues = "https://github.com/majdaleryani/pdf-localvision-mcp/issues"
 
@@ -40,6 +41,13 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/pdf_localvision_mcp"]
+
+[tool.hatch.build.targets.sdist]
+exclude = [
+    ".scratch",
+    ".agents",
+    ".DS_Store",
+]
 
 [dependency-groups]
 dev = [

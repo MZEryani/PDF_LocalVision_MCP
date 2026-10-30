@@ -1,6 +1,6 @@
 # PDF LocalVision MCP
 
-An MCP server that performs native multimodal visual readings of PDF documents using a local oMLX vision language model (`Q-Vision`).
+An MCP server that performs native multimodal visual readings of PDF documents using a local oMLX vision language model (`Q-Vision`) or OpenAI-compatible vision models.
 
 ## Language
 
